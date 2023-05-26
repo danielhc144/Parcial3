@@ -2,39 +2,73 @@
 Parcial 3 de telecomunicaciones. Daniel Hoyos y José Manuel Gómez.
 
 
-Instalación streama:
+# Instalación streama:
 
-´´´
-sudo dnf install java-11-openjdk
-cd /home/vagrant
-wget https://github.com/streamaserver/streama/releases/download/v1.8.2/streama-1.8.2.jar
-java -jar streama-1.8.2.jar
+Vagrant File
+```
+Vagrant.configure("2") do |config|
 
-service firewalld start
-sudo firewall-cmd --zone=public --add-port=8080/tcp --permanent
-sudo firewall-cmd --zone=public --add-forward-port=port=8080:proto=tcp:toaddr=209.191.100.2:toport=8080 --permanent
+ if Vagrant.has_plugin? "vagrant-vbguest"
+ config.vbguest.no_install = true
+ config.vbguest.auto_update = false
+ config.vbguest.no_remote = true
+ config.vm.box_download_insecure=true
+ config.ssh.insert_key = false
+ config.vm.synced_folder File.join(File.dirname(__FILE__), "streama"), "/home/vagrant"
+ end
+ config.vm.define :firewall do |firewall|
+ firewall.vm.box = "generic/centos8"
+ firewall.vm.network :private_network, ip: "209.191.100.3"
+ firewall.vm.network :private_network, ip: "192.168.137.3"
+ firewall.vm.hostname = "firewall"
+ firewall.vm.provision "shell", path: "firewall.sh"
+ end
 
+ config.vm.define :servidor2 do |servidor2|
+ servidor2.vm.box = "generic/centos8"
+ servidor2.vm.network :private_network, ip: "209.191.100.2"
+ servidor2.vm.hostname = "servidor2"
+ servidor2.vm.provision "shell", path: "servidor2.sh"
+ servidor2.vm.provision "shell", path: "servidor2_1.sh"
+ end
 
+end
+```
 
-sudo firewall-cmd --permanent --new-zone=privada
-sudo firewall-cmd --permanent --zone=privada --add-interface=eth0
-sudo firewall-cmd --permanent --zone=privada --add-source=192.168.100.0/24
-sudo firewall-cmd --permanent --new-zone=publica
-sudo firewall-cmd --permanent --zone=publica --add-source=209.191.100.3
+# Servidor firewall
+
+Aprovisionamiento:
+
+```
+sudo service firewalld start
+sudo firewall-cmd --permanent --zone=external --add-interface=eth1
+sudo firewall-cmd --permanent --zone=external --add-masquerade
+sudo firewall-cmd --permanent --zone=external --add-port=8080/tcp
 sudo firewall-cmd --reload
-sudo firewall-cmd --permanent --zone=privada --add-forward-port=port=80:proto=tcp:toaddr=209.191.100.2:toport=80
+sudo firewall-cmd --zone=internal --add-interface=eth2 --permanent
+sudo firewall-cmd --permanent --zone=internal --add-masquerade
+sudo firewall-cmd --permanent --zone=internal --add-port=8080/tcp
+sudo firewall-cmd --zone="internal" --add-forward-port=port=8080:proto=tcp:toport=8080:toaddr=209.191.100.2 --permanent
 sudo firewall-cmd --reload
+```
 
-sudo firewall-cmd --zone=publica --add-interface=eth1 --permanent
-sudo firewall-cmd --permanent --zone=publica --add-interface=eth1
-sudo firewall-cmd --permanent --zone=publica --add-masquerade
-sudo firewall-cmd --permanent --zone=publica --add-port=8080/tcp
-sudo firewall-cmd --zone="publica" --add-forward-port=port=8080:proto=tcp:toport=8080:toaddr=209.191.100.2 --permanent
-sudo firewall-cmd --reload
+# Servidor streama
+```
+sudo systemctl stop firewalld
+sudo systemctl disable firewalld
+sudo yum -y update
+sudo wget --no-cookies --no-check-certificate --header "Cookie:oraclelicense=accept-securebackup-cookie" "http://download.oracle.com/otn-pub/java/jdk/8u131-b11/d54c1d3a095b4ff2b6607d096fa80163/jdk-8u131-linux-x64.rpm"
+sudo yum -y localinstall jdk-8u131-linux-x64.rpm
+sudo wget https://github.com/dularion/streama/releases/download/v1.1/streama-1.1.war
+sudo mkdir /opt/streama
+sudo mv streama-1.1.war /opt/streama/streama.war
+sudo mkdir /opt/streama/media
+sudo chmod 664 /opt/streama/media
 
-sudo firewall-cmd --zone=privada --add-interface=eth2 --permanent
-sudo firewall-cmd --permanent --zone=privada --add-interface=eth1
-sudo firewall-cmd --permanent --zone=privada --add-masquerade
-sudo firewall-cmd --permanent --zone=privada --add-port=8080/tcp
-sudo firewall-cmd --reload
-´´´
+sudo cp /home/vagrant/streama.service /etc/systemd/system/streama.service
+sudo chmod 644 /etc/systemd/system/streama.service
+sudo systemctl daemon-reload
+sudo systemctl start streama
+sudo systemctl enable streama
+sudo systemctl status streama
+```
